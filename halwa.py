@@ -213,7 +213,7 @@ class TagList(Processor):
         tags = []
         for (tag, count) in sorted(Counter(lis).iteritems(), reverse=self.reverse, key=lambda (k,v): v):
             tagged = [p.metadata for p in posts if tag in p.metadata[self.datakey]]
-            tagged = sorted(tagged, reverse=True, key=lambda p: p[self.sortkey])
+            tagged = sorted(tagged, reverse=self.reverse, key=lambda p: p[self.sortkey])
             tags.append(OrderedDict(tag=tag, count=count, posts=tagged, url=self.app.url_for(self.route, tag=tag)))
         
         data[self.key] = tags
