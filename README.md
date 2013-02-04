@@ -6,9 +6,10 @@ Halwa is a single file static site generator written in Python. It's light-weigh
 Usage
 -----
 
-Using Halwa is as easy as it should be; create a configuration file and point Halwa to it:
+Using Halwa is as easy as it should be; install it, then create a configuration file and point Halwa to it:
 
-> python halwa.py config.py
+> pip install halwa
+> python -m halwa config.py
 
 Overview
 --------
