@@ -9,6 +9,7 @@ Usage
 Using Halwa is as easy as it should be; install it, then create a configuration file and point Halwa to it:
 
 > pip install halwa
+
 > python -m halwa config.py
 
 Overview
