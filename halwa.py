@@ -447,7 +447,7 @@ class Engine(object):
         start = time.time()
         for type, expr, mappings, dependencies in self.sources:
             cons = getattr(sys.modules[__name__], type)
-            for path in glob.glob(expr):
+            for path in [p for p in glob.glob(expr) if not os.path.isdir(p)]:
                 item = cons(self, path, mappings, dependencies)
                 status = item.load()
                 if status != 'Cached' or self.verbose:
