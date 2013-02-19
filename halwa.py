@@ -22,13 +22,16 @@ class StaticContent(Content):
     
     def __init__(self, app, path, mappings=None, dependencies=None):
         super(StaticContent, self).__init__(app, path)
+        status, val = self.app.cache.get_file(path)
+        if status != 'Cached':
+            self.app.cache.put_file(path, '')
     
     def load(self):
         return 'Cached'
     
     def render(self):
         path = self.app.get_output_path(self.path, static=True)
-        status = self.app.cache.need_update(path)
+        status = self.app.cache.need_update(path, [self.path])
         
         if status != 'Ignore':
             shutil.copy(self.path, path)

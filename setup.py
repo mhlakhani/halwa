@@ -1,7 +1,7 @@
 from setuptools import setup
 setup(
     name = "Halwa",
-    version = "0.1.1",
+    version = "0.1.2",
     py_modules = ['halwa'],
 
     install_requires = ['Hamlish-Jinja>=0.3.0','Jinja2>=2.6', 'Markdown>=2.2.1'],
