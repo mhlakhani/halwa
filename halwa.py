@@ -94,7 +94,7 @@ class DynamicContent(Content):
     
     def update(self, data):
         
-        for (k,v) in data.iteritems():
+        for (k,v) in data.items():
             key = self.mappings.get(k, k)
             self.data[key] = v
         
@@ -214,7 +214,7 @@ class TagList(Processor):
             lis.extend(post.metadata.get(self.key, []))
         
         tags = []
-        for (tag, count) in sorted(Counter(lis).iteritems(), reverse=self.reverse, key=lambda (k,v): v):
+        for (tag, count) in sorted(Counter(lis).items(), reverse=self.reverse, key=lambda k_v: k_v[1]):
             tagged = [p.metadata for p in posts if tag in p.metadata[self.datakey]]
             tagged = sorted(tagged, reverse=self.reverse, key=lambda p: p[self.sortkey])
             tags.append(OrderedDict(tag=tag, count=count, posts=tagged, url=self.app.url_for(self.route, tag=tag)))
@@ -234,7 +234,7 @@ class BlogSidebar(Processor):
     def process(self, content, data):
         
         sidebar = {
-            self.routekey : OrderedDict((k,self.app.url_for(v)) for (k,v) in data[self.routes].iteritems()), 
+            self.routekey : OrderedDict((k,self.app.url_for(v)) for (k,v) in data[self.routes].items()), 
             self.tags : OrderedDict(('%s x %s' % (t['tag'], t['count']), t['url']) for t in data[self.tags])
         }
         
@@ -444,7 +444,7 @@ class Engine(object):
         return self.routes[route].format(**kwargs)
 
     def load_content(self):
-        print 'Loading content ...'
+        print('Loading content ...')
         count = 0
         cached = 0
         start = time.time()
@@ -454,29 +454,29 @@ class Engine(object):
                 item = cons(self, path, mappings, dependencies)
                 status = item.load()
                 if status != 'Cached' or self.verbose:
-                    print '[%s] %s' % (status, path)
+                    print('[%s] %s' % (status, path))
                 else:
                     cached += 1
                 self.content.append(item)
                 count += 1
-        print 'Loaded {} items ({} cached) in {:.2f}s.'.format(count, cached, time.time()-start)
+        print('Loaded {} items ({} cached) in {:.2f}s.'.format(count, cached, time.time()-start))
     
     def process_content(self):
-        print 'Processing content ...'
+        print('Processing content ...')
         start = time.time()
         count = 0
         for (type, kwargs) in self.processors:
             if self.verbose:
-                print 'Processing %s' % type
+                print('Processing %s' % type)
             processor = getattr(sys.modules[__name__], type)(self, **kwargs)
             self.data.update(processor.process(self.content, self.data))
             count += 1
-        for key,val in self.data.iteritems():
+        for key,val in self.data.items():
             self.cache.put_content(key, val)
-        print 'Ran {} processors in {:.2f}s.'.format(count, time.time()-start) 
+        print('Ran {} processors in {:.2f}s.'.format(count, time.time()-start))
     
     def generate_output(self):
-        print 'Generating output ...'
+        print('Generating output ...')
         count = 0
         cached = 0
         start = time.time()
@@ -484,11 +484,11 @@ class Engine(object):
             content.update(self.data)
             for (status, path) in content.render():
                 if status != 'Ignore' or self.verbose:
-                    print '[%s] %s' % (status, path)
+                    print('[%s] %s' % (status, path))
                 else:
                     cached += 1
                 count += 1
-        print 'Generated {} items ({} cached) in {:.2f}s.'.format(count, cached, time.time()-start)
+        print('Generated {} items ({} cached) in {:.2f}s.'.format(count, cached, time.time()-start))
     
     def generate(self):
         self.load_content()
