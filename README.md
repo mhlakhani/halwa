@@ -83,6 +83,11 @@ It will simply render the given template. It is intended for simple pages (such 
 This will take each *tag* in the *tags* dictionary that has been passed in, and render the template page
 with that *tag*.
 
+### ReadersCornerPage
+
+This will take each *year* in the *readerscorner* dictionary that has been passed in, and render a copy of template page
+for each *month* in that *year*.
+
 ### BlogPost
 
 This will automatically generate a *slug* for the content, based on the date in the metadata and the filename.
@@ -115,6 +120,15 @@ have *count* posts, sorted by *sortkey* (in reverse order if *reverse* is true),
 This processor generates post archives, saving them in the *key* attribute of the *data* dictionary. The archive
 is a dictionary (of years), where each year is a dictionary (of months); and each month is a dictionary of posts
 in that month, sorted by day (in reverse order if *reverse* is true).
+
+### ReadersCorner
+
+This processor generates the readers corner feed, saving it in the *key* attribute of the *data* dictionary. It
+will also generate a sidebar with links (using the provided *route*) for each year and month, 
+saving it in the *sidebarkey* attribute of the *data* dictionary.
+
+The archive is a dictionary (of years), where each year is a dictionary (of months); and each month is a dictionary (of days); 
+each day is a dictionary of links, sorted by time (in reverse order if *reverse* is true). 
 
 ### RSSFeed
 

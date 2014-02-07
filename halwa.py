@@ -99,6 +99,7 @@ class DynamicContent(Content):
             self.data[key] = v
         
         self.data['url_for'] = self.app.url_for
+        self.data['len'] = len
         self.data.update(self.metadata)
     
     def render(self):
@@ -108,7 +109,7 @@ class DynamicContent(Content):
         if self.dependencies is not None:
             deps.extend(self.dependencies)
         status = self.app.cache.need_update(path, deps)
-        
+
         if status != 'Ignore':
             if self.content is None:
                 self.load_content()
@@ -145,6 +146,15 @@ class TagPage(DynamicContent):
         return self.template
     
     def render(self):
+
+        # Special case cause this is expensive
+        updated = False
+        for dep in (self.dependencies + [self.path]):
+            if dep in self.app.cache.updated_content:
+                updated = True
+        
+        if not updated:
+            return []
         
         rets = []
         for tag in self.data['tags']:
@@ -152,6 +162,44 @@ class TagPage(DynamicContent):
             self.data['tagname'] = tag['tag']
             self.data['tagposts'] = tag['posts']
             rets.extend(super(TagPage, self).render())
+        
+        return rets
+
+class ReadersCornerPage(DynamicContent):
+    
+    def __init__(self, app, path, mappings=None, dependencies=None):
+        super(ReadersCornerPage, self).__init__(app, path, mappings, dependencies)
+        self.template = None
+    
+    def load(self):
+        return super(ReadersCornerPage,self).load()
+    
+    def _render(self):
+        if self.template is None:
+            self.template = self.app.jinja_env.hamlish_from_string(self.content)
+        
+        return self.template
+    
+    def render(self):
+
+        # Special case cause this is expensive
+        updated = False
+        for dep in (self.dependencies + [self.path]):
+            if dep in self.app.cache.updated_content:
+                updated = True
+
+        if not updated:
+            return []
+        
+        rets = []
+        archives = self.data['readerscorner']
+        for (year, yeararchive) in archives.items():
+            for (month, montharchive) in yeararchive.items():
+                self.data['year'] = year
+                self.data['month'] = month
+                self.data['montharchive'] = montharchive
+                self.data['monthname'] = calendar.month_name[int(month)]
+                rets.extend(super(ReadersCornerPage, self).render())
         
         return rets
 
@@ -214,10 +262,10 @@ class TagList(Processor):
             lis.extend(post.metadata.get(self.key, []))
         
         tags = []
-        for (tag, count) in sorted(Counter(lis).items(), reverse=self.reverse, key=lambda k_v: k_v[1]):
+        for (tag, count) in sorted(Counter(lis).items(), reverse=self.reverse, key=lambda k_v: (k_v[1], k_v[0])):
             tagged = [p.metadata for p in posts if tag in p.metadata[self.datakey]]
             tagged = sorted(tagged, reverse=self.reverse, key=lambda p: p[self.sortkey])
-            tags.append(OrderedDict(tag=tag, count=count, posts=tagged, url=self.app.url_for(self.route, tag=tag)))
+            tags.append(OrderedDict([('tag',tag), ('count',count), ('posts', tagged), ('url', self.app.url_for(self.route, tag=tag))]))
         
         data[self.key] = tags
         return data
@@ -299,6 +347,74 @@ class PostArchives(Processor):
         data[self.key] = archives
         return data
 
+class ReadersCorner(Processor):
+    
+    def __init__(self, app, filename, filter=None, key='readerscorner', sidebarkey='readerscornersidebar', route='readerscorner', reverse=True):
+        super(ReadersCorner, self).__init__(app)
+        self.filename = filename
+        self.filter = filter
+        self.key = key
+        self.sidebarkey = sidebarkey
+        self.route = route
+        self.reverse = True
+    
+    def process(self, content, data):
+
+        status, val = self.app.cache.get_file(self.filename)
+        if status == 'Cached':
+            data[self.key] = val[self.key]
+            data[self.sidebarkey] = val[self.sidebarkey]
+            return data
+
+        source = []
+        with open(self.filename) as input:
+            source = json.load(input)
+
+        entries = []
+        for entry in source:
+            if self.filter is not None:
+                entry = self.filter(entry)
+                if entry is None:
+                    continue
+            tm = time.strptime(entry['created_time'], '%Y-%m-%dT%H:%M:%S+0000')
+            entry['year'] = tm.tm_year
+            entry['month'] = tm.tm_mon
+            entry['day'] = tm.tm_mday
+            entry['timestamp'] = time.strftime('%H:%M:%S', tm)
+            if entry.get('description', '') == 'null':
+                entry['description'] = None
+            entries.append(entry)
+        
+        years = sorted((k for k in set(e['year'] for e in entries)), reverse=self.reverse)
+
+        archives = OrderedDict()
+        sidebar = OrderedDict()
+        
+        for year in years:
+            yeararchive = OrderedDict()
+            sidebar[year] = OrderedDict()
+            yearentries = [e for e in entries if e['year'] == year]
+            
+            months = sorted((k for k in set(e['month'] for e in yearentries)), reverse=self.reverse)
+            for month in months:
+                montharchive = OrderedDict()
+                monthentries = [e for e in yearentries if e['month'] == month]
+                days = sorted((k for k in set(e['day'] for e in monthentries)), reverse=self.reverse)
+                for day in days:
+                    dayentries = [e for e in monthentries if e['day'] == day]
+                    montharchive[day] = sorted(dayentries, reverse=self.reverse, key=lambda e: e['timestamp'])
+                yeararchive[month] = montharchive
+                linkstring = '%s (%s)' % (calendar.month_name[int(month)], sum(len(v) for k,v in montharchive.items()))
+                sidebar[year][linkstring] = self.app.url_for(self.route, year=year, month=month)
+            
+            archives[year] = yeararchive
+
+        data[self.key] = archives
+        data[self.sidebarkey] = sidebar
+        self.app.cache.put_file(self.filename, {self.key : archives, self.sidebarkey : sidebar})
+
+        return data
+
 class RSSFeed(Processor):
     
     def __init__(self, app, count=5, key='blogrss', title='title', link='link', description='description', sortkey='date', reverse=True):
@@ -335,7 +451,7 @@ class Sitemap(Processor):
     def process(self, content, data):
         
         urls = []
-        for item in (c for c in content if (type(c) != TagPage) and (type(c) != StaticContent)):
+        for item in (c for c in content if (type(c) != TagPage) and (type(c) != StaticContent) and (type(c) != ReadersCornerPage)):
             url = self.root + self.app.get_output_path(self.app.url_for(**item.metadata)).replace(self.app.directories['output'], '')
             urls.append(url)
         
@@ -346,6 +462,7 @@ class Cache(object):
     
     def __init__(self, path):
         self.store = shelve.open(path)
+        self.updated_content = []
     
     def get_file(self, path):
         val = None
@@ -361,6 +478,9 @@ class Cache(object):
         if mtime < val['mtime']:
             status = 'Cached'
             val = val['value']
+
+        if status == 'Read':
+            self.updated_content.append(path)
         
         return (status, val)
     
@@ -377,6 +497,7 @@ class Cache(object):
         v = self.store.get(key, {'value': None})
         if v['value'] != value:
             self.store[key] = val
+            self.updated_content.append(name)
     
     def need_update(self, path, dependencies=None):
         if not os.path.exists(path):
@@ -393,6 +514,11 @@ class Cache(object):
         
         if mtime < max(mtimes):
             return 'Modified'
+
+        for dep in dependencies:
+            if dep in self.updated_content:
+                return 'Modified'
+
         return 'Ignore'
     
     def shutdown(self):
