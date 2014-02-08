@@ -3,6 +3,10 @@ from markdown import markdown
 from collections import OrderedDict, Counter
 from jinja2 import Environment, FileSystemLoader
 
+if sys.version_info[0] == 2:
+    reload(sys)
+    sys.setdefaultencoding('utf8')
+
 class Content(object):
     
     def __init__(self, app, path):
