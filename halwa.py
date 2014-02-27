@@ -1,6 +1,6 @@
-import json, calendar, shutil, sys, os, os.path, glob, shelve, time, pprint, imp
+import json, calendar, shutil, sys, os, os.path, glob, shelve, time, pprint, imp, re
 from markdown import markdown
-from collections import OrderedDict, Counter
+from collections import OrderedDict, Counter, namedtuple
 from jinja2 import Environment, FileSystemLoader
 
 if sys.version_info[0] == 2:
@@ -207,6 +207,47 @@ class ReadersCornerPage(DynamicContent):
         
         return rets
 
+class ReadersCornerJSONItem(DynamicContent):
+    
+    def __init__(self, app, path, mappings=None, dependencies=None):
+        super(ReadersCornerJSONItem, self).__init__(app, path, mappings, dependencies)
+        self.template = None
+        self.renderfn = namedtuple('Template', ['render'])
+
+    def load(self):
+        return super(ReadersCornerJSONItem,self).load()
+    
+    def _render(self):
+        def __render(**kwargs):
+            return json.dumps(kwargs['entry']).replace('\\n', '<br>')
+        return self.renderfn(__render)
+    
+    def render(self):
+
+        # Special case cause this is expensive
+        updated = False
+        for dep in (self.dependencies + [self.path]):
+            if dep in self.app.cache.updated_content:
+                updated = True
+
+        if not updated:
+            return []
+        
+        rets = []
+        archives = self.data['readerscorner']
+        for (year, yeararchive) in archives.items():
+            for (month, montharchive) in yeararchive.items():
+                for (day, dayarchive) in montharchive.items():
+                    for item in dayarchive:
+                        entry = {}
+                        for key in ['link', 'name', 'caption', 'description', 'message']:
+                            entry[key] = item.get(key, '')
+                        self.data['entry'] = entry
+                        self.data['id'] = item['id']
+                        rets.extend(super(ReadersCornerJSONItem, self).render())
+        
+        return rets
+
 class BlogPost(DynamicContent):
     
     def __init__(self, app, path, mappings=None, dependencies=None):
@@ -353,13 +394,17 @@ class PostArchives(Processor):
 
 class ReadersCorner(Processor):
     
-    def __init__(self, app, filename, filter=None, key='readerscorner', sidebarkey='readerscornersidebar', route='readerscorner', reverse=True):
+    def __init__(self, app, filename, filter=None, key='readerscorner', sidebarkey='readerscornersidebar', indexkey='readerscornerindex', route='readerscornerpge', homeroute='readerscornerhome', searchroute='readerscornersearch', stopwords=set(), reverse=True):
         super(ReadersCorner, self).__init__(app)
         self.filename = filename
         self.filter = filter
         self.key = key
+        self.indexkey = indexkey
         self.sidebarkey = sidebarkey
         self.route = route
+        self.homeroute = homeroute
+        self.searchroute = searchroute
+        self.stopwords = stopwords
         self.reverse = True
     
     def process(self, content, data):
@@ -368,12 +413,19 @@ class ReadersCorner(Processor):
         if status == 'Cached':
             data[self.key] = val[self.key]
             data[self.sidebarkey] = val[self.sidebarkey]
+            data[self.indexkey] = val[self.indexkey]
             return data
 
         source = []
         with open(self.filename) as input:
             source = json.load(input)
 
+        words = {}
+        eid = 0
+        patternapos = re.compile("'")
+        patternspace = re.compile('_|-')
+        patternalnum = re.compile(r'\W+')
+        etable = {}
         entries = []
         for entry in source:
             if self.filter is not None:
@@ -387,12 +439,39 @@ class ReadersCorner(Processor):
             entry['timestamp'] = time.strftime('%H:%M:%S', tm)
             if entry.get('description', '') == 'null':
                 entry['description'] = None
+
+            seq = (entry.get(k, '') for k in ['description', 'message', 'link'])
+            text = ' '.join(s for s in seq if s is not None)
+            text = patternapos.sub('', text)
+            text = patternspace.sub(' ', text)
+            text = patternalnum.sub(' ', text)
+            text = [w for w in text.lower().strip().split() if len(w) > 2]
+            text = [w for w in text if w not in self.stopwords]
+            entry['text'] = text
+            for w in text:
+                if w in words:
+                    words[w].add(eid)
+                else:
+                    words[w] = set([eid])
+
+            entry['id'] = eid
+            etable[eid] = entry
+            eid = eid + 1
             entries.append(entry)
+
+        _index = OrderedDict()
+        for word, results in sorted(words.items(), key = lambda wr: wr[0]):
+            _index[word] = sorted([r for r in results], key = lambda r: etable[r]['created_time'], reverse = self.reverse)
+        index = json.dumps(_index)
         
         years = sorted((k for k in set(e['year'] for e in entries)), reverse=self.reverse)
 
         archives = OrderedDict()
         sidebar = OrderedDict()
+
+        sidebar['Main'] = OrderedDict()
+        sidebar['Main']['Home'] = self.app.url_for(self.homeroute)
+        sidebar['Main']['Search'] = self.app.url_for(self.searchroute)
         
         for year in years:
             yeararchive = OrderedDict()
@@ -415,7 +494,8 @@ class ReadersCorner(Processor):
 
         data[self.key] = archives
         data[self.sidebarkey] = sidebar
-        self.app.cache.put_file(self.filename, {self.key : archives, self.sidebarkey : sidebar})
+        data[self.indexkey] = index
+        self.app.cache.put_file(self.filename, {self.key : archives, self.sidebarkey : sidebar, self.indexkey : index})
 
         return data
 
@@ -455,7 +535,7 @@ class Sitemap(Processor):
     def process(self, content, data):
         
         urls = []
-        for item in (c for c in content if (type(c) != TagPage) and (type(c) != StaticContent) and (type(c) != ReadersCornerPage)):
+        for item in (c for c in content if (type(c) != TagPage) and (type(c) != StaticContent) and (type(c) != ReadersCornerPage) and (type(c) != ReadersCornerJSONItem)):
             url = self.root + self.app.get_output_path(self.app.url_for(**item.metadata)).replace(self.app.directories['output'], '')
             urls.append(url)
         
@@ -467,6 +547,7 @@ class Cache(object):
     def __init__(self, path):
         self.store = shelve.open(path)
         self.updated_content = []
+        self.mtimes = {}
     
     def get_file(self, path):
         val = None
@@ -493,7 +574,8 @@ class Cache(object):
         val = {'mtime': int(time.time()), 'value': value}
         
         self.store[key] = val
-    
+        self.mtimes[path] = val['mtime']
+
     def put_content(self, name, value):
         key = name
         val = {'mtime': int(time.time()), 'value': value}
@@ -502,6 +584,7 @@ class Cache(object):
         if v['value'] != value:
             self.store[key] = val
             self.updated_content.append(name)
+            self.mtimes[name] = val['mtime']
     
     def need_update(self, path, dependencies=None):
         if not os.path.exists(path):
@@ -514,7 +597,11 @@ class Cache(object):
         
         mtimes = [0]
         for dep in deps:
-            mtimes.append(self.store.get(dep, {'mtime': 0})['mtime'])
+            if dep in self.mtimes:
+                mtimes.append(self.mtimes[dep])
+            else:
+                mtimes.append(self.store.get(dep, {'mtime': 0})['mtime'])
+                self.mtimes[dep] = mtimes[-1]
         
         if mtime < max(mtimes):
             return 'Modified'
