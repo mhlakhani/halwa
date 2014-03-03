@@ -1,6 +1,6 @@
 import json, calendar, shutil, sys, os, os.path, glob, shelve, time, pprint, imp, re
 from markdown import markdown
-from collections import OrderedDict, Counter, namedtuple
+from collections import OrderedDict, Counter, namedtuple, MutableMapping
 from jinja2 import Environment, FileSystemLoader
 
 if sys.version_info[0] == 2:
@@ -542,10 +542,40 @@ class Sitemap(Processor):
         data[self.key] = urls
         return data
 
+class CacheDict(MutableMapping):
+
+    def __init__(self, path, *args, **kwargs):
+        self.store = dict()
+        self.path = path
+
+        if os.path.exists(path):
+            self.store.update(json.loads(open(path).read()))
+
+        self.update(dict(*args, **kwargs))
+
+    def __getitem__(self, key):
+        return self.store[key]
+
+    def __setitem__(self, key, value):
+        self.store[key] = value
+
+    def __delitem__(self, key):
+        del self.store[key]
+
+    def __iter__(self):
+        return iter(self.store)
+
+    def __len__(self):
+        return len(self.store)
+
+    def close(self):
+        with open(self.path, 'w') as output:
+            output.write(json.dumps(self.store))
+
 class Cache(object):
     
     def __init__(self, path):
-        self.store = shelve.open(path)
+        self.store = CacheDict(path)
         self.updated_content = []
         self.mtimes = {}
     
