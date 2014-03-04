@@ -134,11 +134,33 @@ class Page(DynamicContent):
     def _render(self):
         return self.app.jinja_env.hamlish_from_string(self.content)
 
-class TagPage(DynamicContent):
+class MultiDynamicContent(DynamicContent):
+
+    def __init__(self, app, path, mappings=None, dependencies=None):
+        super(MultiDynamicContent, self).__init__(app, path, mappings, dependencies)
+        self.template = None
+    
+    def load(self):
+        return super(MultiDynamicContent,self).load()
+    
+    def render(self):
+        return super(MultiDynamicContent, self).render()
+
+    def _render(self):
+        return NotImplementedError()
+
+    def need_update(self):
+        updated = False
+        for dep in (self.dependencies + [self.path]):
+            if dep in self.app.cache.updated_content:
+                updated = True
+        
+        return updated
+
+class TagPage(MultiDynamicContent):
     
     def __init__(self, app, path, mappings=None, dependencies=None):
         super(TagPage, self).__init__(app, path, mappings, dependencies)
-        self.template = None
     
     def load(self):
         return super(TagPage,self).load()
@@ -151,13 +173,7 @@ class TagPage(DynamicContent):
     
     def render(self):
 
-        # Special case cause this is expensive
-        updated = False
-        for dep in (self.dependencies + [self.path]):
-            if dep in self.app.cache.updated_content:
-                updated = True
-        
-        if not updated:
+        if not self.need_update():
             return []
         
         rets = []
@@ -169,11 +185,10 @@ class TagPage(DynamicContent):
         
         return rets
 
-class ReadersCornerPage(DynamicContent):
+class ReadersCornerPage(MultiDynamicContent):
     
     def __init__(self, app, path, mappings=None, dependencies=None):
         super(ReadersCornerPage, self).__init__(app, path, mappings, dependencies)
-        self.template = None
     
     def load(self):
         return super(ReadersCornerPage,self).load()
@@ -186,13 +201,7 @@ class ReadersCornerPage(DynamicContent):
     
     def render(self):
 
-        # Special case cause this is expensive
-        updated = False
-        for dep in (self.dependencies + [self.path]):
-            if dep in self.app.cache.updated_content:
-                updated = True
-
-        if not updated:
+        if not self.need_update():
             return []
         
         rets = []
@@ -207,11 +216,10 @@ class ReadersCornerPage(DynamicContent):
         
         return rets
 
-class ReadersCornerJSONItem(DynamicContent):
+class ReadersCornerJSONItem(MultiDynamicContent):
     
     def __init__(self, app, path, mappings=None, dependencies=None):
         super(ReadersCornerJSONItem, self).__init__(app, path, mappings, dependencies)
-        self.template = None
         self.renderfn = namedtuple('Template', ['render'])
 
     def load(self):
@@ -224,13 +232,7 @@ class ReadersCornerJSONItem(DynamicContent):
     
     def render(self):
 
-        # Special case cause this is expensive
-        updated = False
-        for dep in (self.dependencies + [self.path]):
-            if dep in self.app.cache.updated_content:
-                updated = True
-
-        if not updated:
+        if not self.need_update():
             return []
         
         rets = []
